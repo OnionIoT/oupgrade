@@ -1,32 +1,42 @@
 #!/bin/sh
 
-#DBG. /usr/share/libubox/jshn.sh  
+. /usr/share/libubox/jshn.sh  
 
 # setup variables
 FIRMWARE_FILE="firmware.json"
 
-#LOCAL_PATH="/etc/onion/config"
-LOCAL_PATH="."
+LOCAL_PATH="/etc/onion/"
+#LOCAL_PATH="."
 LOCAL_FILE="$LOCAL_PATH/$FIRMWARE_FILE"
 
 TMP_PATH="/tmp"
+
+REPO_URL="http://cloud.onion.io/api/firmware"
+STABLE_FILE="stable.json"
+LATEST_FILE="latest.json"
 
 
 bUsage=0
 bVersionOnly=0
 bUbusOutput=0
 bUpgrade=0
+bLatest=0
+
+
 
 # read arguments
 while [ "$1" != "" ]
 do
 	case "$1" in
+    	-h|-help|--help)
+			bUsage=1
+	    ;;
     	-v|-version|--version)
 			bVersionOnly=1
 	    ;;
-	    -h|-help|--help)
-			bUsage=1
-	    ;;
+	    -l|-latest|--latest)
+			bLatest=1
+		;;
 	    -u|-ubus)
 			bUbusOutput=1
 	    ;;
@@ -50,9 +60,11 @@ PrintUsage () {
 	echo "Usage: $0"
 	echo ""
 	echo "Arguments:"
-	echo "	-v 		Just print the current firmware version"
-	echo "	-u 		Script output is ubus compatible"
-	echo "	-h 		Print this usage prompt"
+	echo "	-help 		Print this usage prompt"
+	echo "	-version 	Just print the current firmware version"
+	echo "	-latest 	Use latest repo version (instead of stable version)"
+	echo "	-ubus 	Script output is ubus compatible"
+	
 	echo ""
 }
 
@@ -88,20 +100,43 @@ fi
 
 
 ## get the latest repo version
-json_get_var REMOTE_URL url
-REPO_FILE="$REMOTE_URL/$FIRMWARE_FILE"
-REMOTE_JSON="$(wget -O - $REMOTE_FILE)"
+if [ $bUbusOutput == 0 ]; then
+	echo "> Checking latest version online..."
+fi
+
+# find the remote version file to be used
+if [ $bLatest == 0 ]; then
+	# use the stable version
+	REPO_FILE="$REPO_URL/$STABLE_FILE"
+else
+	# use the latest version
+	REPO_FILE="$REPO_URL/$LATEST_FILE"
+fi
+
+# read the json
+TMP_JSON="$TMP_PATH/tmp.json"
+CMD="rm -rf $TMP_JSON"
+eval $CMD
+
+CMD="wget -q -O $TMP_JSON \"$REPO_FILE\""
+
+while [ ! -f $TMP_JSON ]
+do
+	eval $CMD
+done
+
+REMOTE_JSON="$(cat $TMP_JSON)"
 
 json_load "$REMOTE_JSON"
 json_get_var repoVersion version
 
 if [ $bUbusOutput == 0 ]; then
-	echo "> Repo Firmware Version: $currentVersion"
+	echo "> Repo Firmware Version: $repoVersion"
 fi
 
 
 ## compare the versions
-if [ $currentVersion != $remoteVersion ]; then
+if [ "$currentVersion" != "$remoteVersion" ]; then
 	if [ $bUbusOutput == 0 ]; then
 		echo "> New firmware available, need to upgrade device firmware"
 		bUpgrade=1
@@ -120,10 +155,19 @@ if [ $bUpgrade == 1 ]; then
 		echo "> Downloading new firmware..."
 	fi
 
-	json_get_var BINARY bin
-	REPO_BIN="$REMOTE_URL/$BINARY"
+	json_get_var REPO_BINARY url
 
-	wget -q -0 $TMP_PATH "$REPO_BIN"
+	BINARY=${REPO_BINARY##*/}
+	LOCAL_BIN="$TMP_PATH/$BINARY"
+	
+	if [ -f $LOCAL_BIN ]; then
+		eval rm -rf $LOCAL_BIN
+	fi
+
+	while [ ! -f $LOCAL_BIN ]
+	do
+		wget -O $LOCAL_BIN "$REPO_BINARY"
+	done
 
 	# start firmware upgrade
 	if [ $bUbusOutput == 0 ]; then
@@ -132,8 +176,7 @@ if [ $bUpgrade == 1 ]; then
 		echo "{\"upgrade\":true}"
 	fi
 
-	LOCAL_BIN="$TMP_PATH/$BIN"
-	sysupgrade $LOCAL_BIN &
+	#sysupgrade $LOCAL_BIN &
 else
 	if [ $bUbusOutput == 1 ]; then
 		echo "{\"upgrade\":false}"

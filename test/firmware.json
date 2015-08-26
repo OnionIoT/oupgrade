@@ -1,6 +1,6 @@
 {
-  "version": 1234,
-  "date": "Wed Aug 26, 12:01",
-  "url": "http://hk.onion.io",
-  "bin": "openwrt-ar71xx-generic-onion-omega-squashfs-factory.bin"
+	"version":"0.0.1",
+	"build":100,
+	"date":"2015-08-26T11:26:00.000Z",
+	"url":"http://repo.onion.io/omega/images/omega-openwrt-cc.bin"
 }
