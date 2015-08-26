@@ -6,7 +6,6 @@
 FIRMWARE_FILE="firmware.json"
 
 LOCAL_PATH="/etc/onion/"
-#LOCAL_PATH="."
 LOCAL_FILE="$LOCAL_PATH/$FIRMWARE_FILE"
 
 TMP_PATH="/tmp"
@@ -21,7 +20,6 @@ bVersionOnly=0
 bUbusOutput=0
 bUpgrade=0
 bLatest=0
-
 
 
 # read arguments
@@ -68,6 +66,22 @@ PrintUsage () {
 	echo ""
 }
 
+# functions to parse version data
+GetVersionMajor () {
+	ret=${1%%.*}
+	echo "$ret"
+}
+
+GetVersionMinor () {
+	tmp=${1#*.}
+	ret=${tmp%%.*}
+	echo "$ret"
+}
+
+GetVersionRevision () {
+	ret=${1##*.}
+	echo "$ret"
+}
 
 ################################
 
@@ -82,17 +96,21 @@ fi
 
 ## get the current version
 json_load "$(cat $LOCAL_FILE)"
-json_get_var currentVersion version
+json_get_var curVersion version
+
+curVersionMajor=$(GetVersionMajor "$curVersion")
+curVersionMinor=$(GetVersionMinor "$curVersion")
+curVersionRev=$(GetVersionRevision "$curVersion")
 
 if [ $bUbusOutput == 0 ]; then
-	echo "> Device Firmware Version: $currentVersion"
+	echo "> Device Firmware Version: $curVersion ($curVersionMajor, $curVersionMinor, $curVersionRev)"
 fi
 
 # optional exit after checking device firmware version
 if [ $bVersionOnly == 1 ]
 then
 	if [ $bUbusOutput == 1 ]; then
-		echo "{\"version\":$currentVersion}"
+		echo "{\"version\":$curVersion}"
 	fi
 
 	exit
@@ -130,13 +148,18 @@ REMOTE_JSON="$(cat $TMP_JSON)"
 json_load "$REMOTE_JSON"
 json_get_var repoVersion version
 
+repoVersionMajor=$(GetVersionMajor "$repoVersion")
+repoVersionMinor=$(GetVersionMinor "$repoVersion")
+repoVersionRev=$(GetVersionRevision "$repoVersion")
+
 if [ $bUbusOutput == 0 ]; then
-	echo "> Repo Firmware Version: $repoVersion"
+	echo "> Repo Firmware Version: $repoVersion ($repoVersionMajor, $repoVersionMinor, $repoVersionRev)"
 fi
 
 
 ## compare the versions
-if [ "$currentVersion" != "$remoteVersion" ]; then
+# TODO: update this check to use the major/minor/rev numbers
+if [ "$curVersion" != "$repoVersion" ]; then
 	if [ $bUbusOutput == 0 ]; then
 		echo "> New firmware available, need to upgrade device firmware"
 		bUpgrade=1
@@ -176,7 +199,7 @@ if [ $bUpgrade == 1 ]; then
 		echo "{\"upgrade\":true}"
 	fi
 
-	#sysupgrade $LOCAL_BIN &
+	sysupgrade $LOCAL_BIN
 else
 	if [ $bUbusOutput == 1 ]; then
 		echo "{\"upgrade\":false}"
