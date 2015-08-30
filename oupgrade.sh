@@ -145,6 +145,8 @@ GetRepoVersion () {
 	# parse the binary url
 	json_get_var repoBinary url
 	binaryName=${repoBinary##*/}
+
+	localBinary="$tmpPath/$binaryName"
 }
 
 # function to add version info to json
@@ -277,15 +279,24 @@ fi
 ## generate script info output (json and stdout)
 if [ $bJsonOutput == 1 ]
 then
-	# json output
+	## json output
 	json_init
 
+	# upgrading firmware or not
 	if [ $bUpgrade == 1 ]; then
 		json_add_string "upgrade" "true"
 	else
 		json_add_string "upgrade" "false"
 	fi
 
+	# image info
+	json_add_object "image"
+	json_add_string "binary" "$binaryName"
+	json_add_string "url" "$repoBinary"
+	json_add_string "local" "$localBinary"
+	json_close_object
+
+	# version info
 	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
 	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev
 
@@ -314,7 +325,7 @@ then
 		echo "> Downloading new firmware ..."
 	fi
 
-	localBinary="$tmpPath/$binaryName"
+	
 	
 	# delete any local firmware with the same name
 	if [ -f $localBinary ]; then
