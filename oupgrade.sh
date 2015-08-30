@@ -3,24 +3,164 @@
 . /usr/share/libubox/jshn.sh  
 
 # setup variables
-FIRMWARE_FILE="firmware.json"
-
-LOCAL_PATH="/etc/onion/"
-LOCAL_FILE="$LOCAL_PATH/$FIRMWARE_FILE"
-
-TMP_PATH="/tmp"
-
-REPO_URL="http://cloud.onion.io/api/firmware"
-STABLE_FILE="stable.json"
-LATEST_FILE="latest.json"
-
-
 bUsage=0
-bVersionOnly=0
-bUbusOutput=0
-bUpgrade=0
+bDeviceVersion=1
+bRepoVersion=1
+bCheck=1
 bLatest=0
+bUpgrade=0
+bJsonOutput=0
 
+deviceVersion=""
+deviceVersionMajor=""
+deviceVersionMinor=""
+deviceVersionRev=""
+
+repoVersion=""
+repoVersionMajor=""
+repoVersionMinor=""
+repoVersionRev=""
+
+repoBinary=""
+binaryName=""
+
+tmpPath="/tmp"
+repoUrl="http://cloud.onion.io/api/firmware"
+repoStableFile="stable.json"
+repoLatestFile="latest.json"
+timeout=500
+
+
+
+
+# function to print script usage
+Usage () {
+	echo "Functionality:"
+	echo "	Check if new Onion firmware is available and perform upgrade"
+	echo ""
+	echo "Usage: $0"
+	echo ""
+	echo "Arguments:"
+	echo " -help 		Print this usage prompt"
+	echo " -version 	Just print the current firmware version"
+	echo " -latest 		Use latest repo version (instead of stable version)"
+	echo " -force		Force the upgrade, regardless of versions"
+	echo " -ubus 		Script outputs only json"
+	
+	echo ""
+}
+
+## functions to parse version data
+# parsing (x).y.z
+GetVersionMajor () {
+	ret=${1%%.*}
+	echo "$ret"
+}
+
+# parsing x.(y).z
+GetVersionMinor () {
+	tmp=${1#*.}
+	ret=${tmp%%.*}
+	echo "$ret"
+}
+
+# parsing x.y.(z)
+GetVersionRevision () {
+	ret=${1##*.}
+	echo "$ret"
+}
+
+# function to read device firmware version
+GetDeviceVersion () {
+	local ver=$(uci -q get onion.@onion[0].version)
+	if [ "$ver" != "" ]; then
+		# read the device version
+		deviceVersion=$ver
+
+		# read the sub-version info
+		deviceVersionMajor=$(GetVersionMajor "$deviceVersion")
+		deviceVersionMinor=$(GetVersionMinor "$deviceVersion")
+		deviceVersionRev=$(GetVersionRevision "$deviceVersion")
+	else
+		deviceVersion="unknown"
+	fi
+}
+
+# function to read latest repo version
+GetRepoVersion () {
+	# define the file to write to 
+	local tmpFile="$tmpPath/check.txt"
+	local tmpJson="$tmpPath/ver.json"
+	local rmCmd="rm -rf $tmpJson"
+	eval $rmCmd
+
+	#define the wget commands
+	local wgetSpiderCmd="wget -t $timeout --spider -o $tmpFile \"$repoFile\""
+	local wgetCmd="wget -t $timeout -q -O $tmpJson \"$repoFile\""
+
+	# check the repo file exists
+	local count=0
+	local bLoop=1
+	while 	[ $bLoop == 1 ];
+	do
+		eval $wgetSpiderCmd
+
+		# read the response
+		local readback=$(cat $tmpFile | grep "Remote file exists.")
+		if [ "$readback" != "" ]; then
+			bLoop=0
+		fi
+
+		# implement time-out
+		count=`expr $count + 1`
+		if [ $count -gt $timeout ]; then
+			bLoop=0
+			if [ $bJsonOutput == 0 ]; then
+				echo "> ERROR: request timeout, internet connection not successful"
+			fi
+
+			exit
+		fi
+	done
+
+	# fetch the file
+	while [ ! -f $tmpJson ]
+	do
+		eval $wgetCmd
+	done
+
+	# parse the json file
+	local RESP="$(cat $tmpJson)"
+	json_load "$RESP"
+
+	# check the json file contents
+	json_get_var repoVersion version
+
+	repoVersionMajor=$(GetVersionMajor "$repoVersion")
+	repoVersionMinor=$(GetVersionMinor "$repoVersion")
+	repoVersionRev=$(GetVersionRevision "$repoVersion")
+
+	# parse the binary url
+	json_get_var repoBinary url
+	binaryName=${repoBinary##*/}
+}
+
+# function to add version info to json
+JsonAddVersion () {
+	json_add_object "$1"
+		
+	json_add_string "version" "$2"
+	json_add_string "major" "$3"
+	json_add_string "minor" "$4"
+	json_add_string "revision" "$5"
+
+	json_close_object
+}
+
+
+
+########################
+##### Main Program #####
 
 # read arguments
 while [ "$1" != "" ]
@@ -30,13 +170,18 @@ do
 			bUsage=1
 	    ;;
     	-v|-version|--version)
-			bVersionOnly=1
+			bDeviceVersion=1
+			bRepoVersion=0
 	    ;;
+	    -f|-force|--force)
+			bCheck=0
+			bUpgrade=1
+		;;
 	    -l|-latest|--latest)
 			bLatest=1
 		;;
 	    -u|-ubus)
-			bUbusOutput=1
+			bJsonOutput=1
 	    ;;
 	    *)
 			echo "ERROR: Invalid Argument"
@@ -49,160 +194,135 @@ do
 done
 
 
-################################
-##### Functions
-PrintUsage () {
-	echo "Functionality:"
-	echo "	Check if new Onion firmware is available and perform upgrade"
-	echo ""
-	echo "Usage: $0"
-	echo ""
-	echo "Arguments:"
-	echo "	-help 		Print this usage prompt"
-	echo "	-version 	Just print the current firmware version"
-	echo "	-latest 	Use latest repo version (instead of stable version)"
-	echo "	-ubus 	Script output is ubus compatible"
-	
-	echo ""
-}
-
-# functions to parse version data
-GetVersionMajor () {
-	ret=${1%%.*}
-	echo "$ret"
-}
-
-GetVersionMinor () {
-	tmp=${1#*.}
-	ret=${tmp%%.*}
-	echo "$ret"
-}
-
-GetVersionRevision () {
-	ret=${1##*.}
-	echo "$ret"
-}
-
-################################
-
-
-# print the script usage
+## print the script usage
 if [ $bUsage == 1 ]
 then
-	PrintUsage
+	Usage
 	exit
 fi
 
 
 ## get the current version
-json_load "$(cat $LOCAL_FILE)"
-json_get_var curVersion version
+if [ $bDeviceVersion == 1 ]; then
+	# find the version
+	GetDeviceVersion
 
-curVersionMajor=$(GetVersionMajor "$curVersion")
-curVersionMinor=$(GetVersionMinor "$curVersion")
-curVersionRev=$(GetVersionRevision "$curVersion")
-
-if [ $bUbusOutput == 0 ]; then
-	echo "> Device Firmware Version: $curVersion ($curVersionMajor, $curVersionMinor, $curVersionRev)"
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Device Firmware Version: $deviceVersion"
+	fi
 fi
 
-# optional exit after checking device firmware version
-if [ $bVersionOnly == 1 ]
-then
-	if [ $bUbusOutput == 1 ]; then
-		echo "{\"version\":$curVersion}"
+
+## get the latest repo version
+if [ $bRepoVersion == 1 ]; then
+	# find the remote version file to be used
+	if [ $bLatest == 0 ]; then
+		# use the stable version
+		repoFile="$repoUrl/$repoStableFile"
+	else
+		# use the latest version
+		repoFile="$repoUrl/$repoLatestFile"
+	fi
+
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Checking latest version online..."
+	fi
+
+	# fetch the repo version
+	GetRepoVersion
+
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Repo Firmware Version: $repoVersion"
+	fi
+else
+	# optional exit here if just getting device version 
+	if [ $bJsonOutput == 1 ]; then
+		json_init
+		JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
+		json_dump
 	fi
 
 	exit
 fi
 
 
-## get the latest repo version
-if [ $bUbusOutput == 0 ]; then
-	echo "> Checking latest version online..."
-fi
-
-# find the remote version file to be used
-if [ $bLatest == 0 ]; then
-	# use the stable version
-	REPO_FILE="$REPO_URL/$STABLE_FILE"
-else
-	# use the latest version
-	REPO_FILE="$REPO_URL/$LATEST_FILE"
-fi
-
-# read the json
-TMP_JSON="$TMP_PATH/tmp.json"
-CMD="rm -rf $TMP_JSON"
-eval $CMD
-
-CMD="wget -q -O $TMP_JSON \"$REPO_FILE\""
-
-while [ ! -f $TMP_JSON ]
-do
-	eval $CMD
-done
-
-REMOTE_JSON="$(cat $TMP_JSON)"
-
-json_load "$REMOTE_JSON"
-json_get_var repoVersion version
-
-repoVersionMajor=$(GetVersionMajor "$repoVersion")
-repoVersionMinor=$(GetVersionMinor "$repoVersion")
-repoVersionRev=$(GetVersionRevision "$repoVersion")
-
-if [ $bUbusOutput == 0 ]; then
-	echo "> Repo Firmware Version: $repoVersion ($repoVersionMajor, $repoVersionMinor, $repoVersionRev)"
-fi
-
-
 ## compare the versions
-# TODO: update this check to use the major/minor/rev numbers
-if [ "$curVersion" != "$repoVersion" ]; then
-	if [ $bUbusOutput == 0 ]; then
-		echo "> New firmware available, need to upgrade device firmware"
+if 	[ $bCheck == 1 ]
+then
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Comparing version numbers"
+	fi
+
+	if 	[ $repoVersionMajor -gt $deviceVersionMajor ]
+	then
+		bUpgrade=1
+	elif 	[ $repoVersionMajor -eq $deviceVersionMajor ] &&
+		 	[ $repoVersionMinor -gt $deviceVersionMinor ];
+	then
+		bUpgrade=1
+	elif 	[ $repoVersionMajor -eq $deviceVersionMajor ] &&
+		 	[ $repoVersionMinor -eq $deviceVersionMinor ] &&
+		 	[ $repoVersionRev -gt $deviceVersionRev ];
+	then
 		bUpgrade=1
 	fi
-else
-	if [ $bUbusOutput == 0 ]; then
-		echo "> Device firmware is up to date!"
+fi
+
+
+## create json output
+if [ $bJsonOutput == 1 ]
+then
+	json_init
+
+	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
+	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev
+
+	if [ $bUpgrade == 1 ]; then
+		json_add_string "upgrade" "true"
+	else
+		json_add_string "upgrade" "false"
 	fi
+
+	json_dump
 fi
 
 
 ## perform the firmware upgrade
-if [ $bUpgrade == 1 ]; then
-	# download the new firmware
-	if [ $bUbusOutput == 0 ]; then
-		echo "> Downloading new firmware..."
+if [ $bUpgrade == 1 ]
+then
+	if [ $bJsonOutput == 0 ]; then
+		echo "> New firmware available, need to upgrade device firmware"
+		echo "> Downloading new firmware ..."
 	fi
 
-	json_get_var REPO_BINARY url
-
-	BINARY=${REPO_BINARY##*/}
-	LOCAL_BIN="$TMP_PATH/$BINARY"
+	localBinary="$tmpPath/$binaryName"
 	
-	if [ -f $LOCAL_BIN ]; then
-		eval rm -rf $LOCAL_BIN
+	# delete any local firmware with the same name
+	if [ -f $localBinary ]; then
+		eval rm -rf $localBinary
 	fi
 
-	while [ ! -f $LOCAL_BIN ]
+	# setup wget verbosity
+	local verbosity="-q"
+	if [ $bJsonOutput == 0 ]; then
+		verbosity=""
+	fi
+
+	# download the new firmware
+	while [ ! -f $localBinary ]
 	do
-		wget -O $LOCAL_BIN "$REPO_BINARY"
+		wget $verbosity -O $localBinary "$repoBinary"
 	done
 
 	# start firmware upgrade
-	if [ $bUbusOutput == 0 ]; then
+	if [ $bJsonOutput == 0 ]; then
 		echo "> Starting firmware upgrade...."
-	else
-		echo "{\"upgrade\":true}"
 	fi
 
-	sysupgrade $LOCAL_BIN
+	#DBGsysupgrade $localBinary
 else
-	if [ $bUbusOutput == 1 ]; then
-		echo "{\"upgrade\":false}"
+	if [ $bJsonOutput == 0 ]; then
+		echo "> Device firmware is up to date!"
 	fi
 fi
 
