@@ -10,6 +10,7 @@ bCheck=1
 bLatest=0
 bUpgrade=0
 bJsonOutput=0
+bCheckOnly=0
 
 deviceVersion=""
 deviceVersionMajor=""
@@ -45,6 +46,7 @@ Usage () {
 	echo " -version 	Just print the current firmware version"
 	echo " -latest 		Use latest repo version (instead of stable version)"
 	echo " -force		Force the upgrade, regardless of versions"
+	echo " -check 		Only compare versions, do not actually update"
 	echo " -ubus 		Script outputs only json"
 	
 	echo ""
@@ -177,6 +179,9 @@ do
 			bCheck=0
 			bUpgrade=1
 		;;
+		-c|-check|--check)
+			bCheckOnly=1
+		;;
 	    -l|-latest|--latest)
 			bLatest=1
 		;;
@@ -269,13 +274,11 @@ then
 fi
 
 
-## create json output
+## generate script info output (json and stdout)
 if [ $bJsonOutput == 1 ]
 then
+	# json output
 	json_init
-
-	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
-	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev
 
 	if [ $bUpgrade == 1 ]; then
 		json_add_string "upgrade" "true"
@@ -283,7 +286,24 @@ then
 		json_add_string "upgrade" "false"
 	fi
 
+	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
+	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev
+
 	json_dump
+else
+	# stdout
+	if [ $bUpgrade == 1 ]; then
+		echo "> New firmware available, need to upgrade device firmware"
+	else
+		echo "> Device firmware is up to date!"
+	fi
+fi
+
+
+## exit route if only checking if upgrade is required
+if [ $bCheckOnly == 1 ]
+then
+	exit
 fi
 
 
@@ -291,7 +311,6 @@ fi
 if [ $bUpgrade == 1 ]
 then
 	if [ $bJsonOutput == 0 ]; then
-		echo "> New firmware available, need to upgrade device firmware"
 		echo "> Downloading new firmware ..."
 	fi
 
@@ -319,11 +338,7 @@ then
 		echo "> Starting firmware upgrade...."
 	fi
 
-	#DBGsysupgrade $localBinary
-else
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Device firmware is up to date!"
-	fi
+	sysupgrade $localBinary
 fi
 
 
