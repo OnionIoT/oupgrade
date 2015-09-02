@@ -25,6 +25,7 @@ repoVersionRev=""
 repoBinary=""
 binaryName=""
 
+
 tmpPath="/tmp"
 repoUrl="http://cloud.onion.io/api/firmware"
 repoStableFile="stable.json"
@@ -44,9 +45,9 @@ Usage () {
 	echo "Arguments:"
 	echo " -help 		Print this usage prompt"
 	echo " -version 	Just print the current firmware version"
-	echo " -latest 		Use latest repo version (instead of stable version)"
+	echo " -latest 	Use latest repo version (instead of stable version)"
 	echo " -force		Force the upgrade, regardless of versions"
-	echo " -check 		Only compare versions, do not actually update"
+	echo " -check 	Only compare versions, do not actually update"
 	echo " -ubus 		Script outputs only json"
 	
 	echo ""
@@ -326,7 +327,6 @@ then
 	fi
 
 	
-	
 	# delete any local firmware with the same name
 	if [ -f $localBinary ]; then
 		eval rm -rf $localBinary
@@ -345,6 +345,7 @@ then
 	done
 
 	# start firmware upgrade
+	sleep 5 	# wait 5 seconds before starting the firmware upgrade
 	if [ $bJsonOutput == 0 ]; then
 		echo "> Starting firmware upgrade...."
 	fi
