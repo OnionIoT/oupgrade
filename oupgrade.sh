@@ -9,6 +9,7 @@ bRepoVersion=1
 bCheck=1
 bLatest=0
 bUpgrade=0
+bBuildMismatch=0
 bJsonOutput=0
 bCheckOnly=0
 
@@ -167,10 +168,10 @@ JsonAddVersion () {
 	json_add_object "$1"
 		
 	json_add_string "version" "$2"
-	json_add_string "major" "$3"
-	json_add_string "minor" "$4"
-	json_add_string "revision" "$5"
-	json_add_string "build" "$6"
+	json_add_int 	"major" "$3"
+	json_add_int 	"minor" "$4"
+	json_add_int 	"revision" "$5"
+	json_add_int 	"build" "$6"
 
 	json_close_object
 }
@@ -290,6 +291,15 @@ then
 fi
 
 
+## compare the build numbers (only if versions are the same)
+if 	[ $bUpgrade == 0 ]
+then
+	if [ $repoBuildNum -gt $deviceBuildNum ]; then
+		bBuildMismatch=1
+	fi
+fi
+
+
 ## generate script info output (json and stdout)
 if [ $bJsonOutput == 1 ]
 then
@@ -301,6 +311,13 @@ then
 		json_add_string "upgrade" "true"
 	else
 		json_add_string "upgrade" "false"
+	fi
+
+	# version mismatch
+	if [ $bBuildMismatch == 1 ]; then
+		json_add_string "build_mismatch" true
+	else
+		json_add_string "build_mismatch" false
 	fi
 
 	# image info
