@@ -16,11 +16,13 @@ deviceVersion=""
 deviceVersionMajor=""
 deviceVersionMinor=""
 deviceVersionRev=""
+deviceBuildNum=""
 
 repoVersion=""
 repoVersionMajor=""
 repoVersionMinor=""
 repoVersionRev=""
+repoBuildNum=""
 
 repoBinary=""
 binaryName=""
@@ -84,6 +86,14 @@ GetDeviceVersion () {
 		deviceVersionMajor=$(GetVersionMajor "$deviceVersion")
 		deviceVersionMinor=$(GetVersionMinor "$deviceVersion")
 		deviceVersionRev=$(GetVersionRevision "$deviceVersion")
+
+		# read the build number
+		local build=$(uci -q get onion.@onion[0].build)
+		if [ "$build" != "" ]; then
+			deviceBuildNum=$build
+		else
+			deviceBuildNum=0
+		fi
 	else
 		deviceVersion="unknown"
 	fi
@@ -143,6 +153,8 @@ GetRepoVersion () {
 	repoVersionMinor=$(GetVersionMinor "$repoVersion")
 	repoVersionRev=$(GetVersionRevision "$repoVersion")
 
+	json_get_var repoBuildNum build
+
 	# parse the binary url
 	json_get_var repoBinary url
 	binaryName=${repoBinary##*/}
@@ -158,6 +170,7 @@ JsonAddVersion () {
 	json_add_string "major" "$3"
 	json_add_string "minor" "$4"
 	json_add_string "revision" "$5"
+	json_add_string "build" "$6"
 
 	json_close_object
 }
@@ -246,7 +259,7 @@ else
 	# optional exit here if just getting device version 
 	if [ $bJsonOutput == 1 ]; then
 		json_init
-		JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
+		JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev $deviceBuildNum
 		json_dump
 	fi
 
@@ -298,8 +311,8 @@ then
 	json_close_object
 
 	# version info
-	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev
-	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev
+	JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev $deviceBuildNum
+	JsonAddVersion "repo" $repoVersion $repoVersionMajor $repoVersionMinor $repoVersionRev $repoBuildNum
 
 	json_dump
 else
