@@ -230,7 +230,7 @@ if [ $bDeviceVersion == 1 ]; then
 	GetDeviceVersion
 
 	if [ $bJsonOutput == 0 ]; then
-		echo "> Device Firmware Version: $deviceVersion"
+		echo "> Device Firmware Version: $deviceVersion b$deviceBuildNum"
 	fi
 fi
 
@@ -254,7 +254,7 @@ if [ $bRepoVersion == 1 ]; then
 	GetRepoVersion
 
 	if [ $bJsonOutput == 0 ]; then
-		echo "> Repo Firmware Version: $repoVersion"
+		echo "> Repo Firmware Version: $repoVersion b$repoBuildNum"
 	fi
 else
 	# optional exit here if just getting device version 
@@ -314,11 +314,7 @@ then
 	fi
 
 	# version mismatch
-	if [ $bBuildMismatch == 1 ]; then
-		json_add_string "build_mismatch" true
-	else
-		json_add_string "build_mismatch" false
-	fi
+	json_add_boolean "build_mismatch" $bBuildMismatch
 
 	# image info
 	json_add_object "image"
@@ -335,7 +331,9 @@ then
 else
 	# stdout
 	if [ $bUpgrade == 1 ]; then
-		echo "> New firmware available, need to upgrade device firmware"
+		echo "> New firmware version available, need to upgrade device firmware"
+	elif [ $bBuildMismatch == 1 ]; then
+		echo "> New build of current firmware available, rerun with -force option to upgrade"
 	else
 		echo "> Device firmware is up to date!"
 	fi
