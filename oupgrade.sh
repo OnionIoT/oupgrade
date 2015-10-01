@@ -333,7 +333,7 @@ else
 	if [ $bUpgrade == 1 ]; then
 		echo "> New firmware version available, need to upgrade device firmware"
 	elif [ $bBuildMismatch == 1 ]; then
-		echo "> New build of current firmware available, rerun with -force option to upgrade"
+		echo "> New build of current firmware available, upgrade is optional, rerun with '-force' option to upgrade"
 	else
 		echo "> Device firmware is up to date!"
 	fi
