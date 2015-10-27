@@ -373,12 +373,18 @@ then
 	done
 
 	# start firmware upgrade
-	sleep 5 	# wait 5 seconds before starting the firmware upgrade
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Starting firmware upgrade...."
-	fi
+	if [ $? -eq 0 ]; then
+		sleep 5 	# wait 5 seconds before starting the firmware upgrade
+		if [ $bJsonOutput == 0 ]; then
+			echo "> Starting firmware upgrade...."
+		fi
 
-	sysupgrade $localBinary
+		sysupgrade $localBinary
+	else
+		if [ $bJsonOutput == 0 ]; then
+			echo "> ERROR: Downloading firmware has failed! Try again!"
+		fi
+	fi
 fi
 
 
