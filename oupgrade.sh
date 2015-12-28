@@ -1,6 +1,7 @@
 #!/bin/sh
 
-. /usr/share/libubox/jshn.sh  
+# include the Onion sh lib
+. /usr/lib/onion/lib.sh
 
 # setup variables
 bUsage=0
@@ -30,9 +31,9 @@ binaryName=""
 
 
 tmpPath="/tmp"
-repoUrl="http://cloud.onion.io/api/firmware"
-repoStableFile="stable.json"
-repoLatestFile="latest.json"
+repoUrl="https://api.onion.io/omega/firmware"
+repoStableFile="stable"
+repoLatestFile="latest"
 timeout=500
 
 
@@ -54,6 +55,14 @@ Usage () {
 	echo " -ubus 		Script outputs only json"
 	
 	echo ""
+}
+
+# print to stdout if not doing json output
+#	arg1	- the text to print
+Print () {
+	if [ $bJsonOutput == 0 ]; then
+		echo "$1"
+	fi
 }
 
 ## functions to parse version data
@@ -101,66 +110,35 @@ GetDeviceVersion () {
 }
 
 # function to read latest repo version
+#	arg1	- url of file to download
 GetRepoVersion () {
-	# define the file to write to 
-	local tmpFile="$tmpPath/check.txt"
-	local tmpJson="$tmpPath/ver.json"
-	local rmCmd="rm -rf $tmpJson"
-	eval $rmCmd
-
-	#define the wget commands
-	local wgetSpiderCmd="wget -t $timeout --spider -o $tmpFile \"$repoFile\""
-	local wgetCmd="wget -t $timeout -q -O $tmpJson \"$repoFile\""
-
-	# check the repo file exists
-	local count=0
-	local bLoop=1
-	while 	[ $bLoop == 1 ];
-	do
-		eval $wgetSpiderCmd
-
-		# read the response
-		local readback=$(cat $tmpFile | grep "Remote file exists.")
-		if [ "$readback" != "" ]; then
-			bLoop=0
-		fi
-
-		# implement time-out
-		count=`expr $count + 1`
-		if [ $count -gt $timeout ]; then
-			bLoop=0
-			if [ $bJsonOutput == 0 ]; then
-				echo "> ERROR: request timeout, internet connection not successful"
-			fi
-
-			exit
-		fi
-	done
+	local outFile=$(mktemp)
 
 	# fetch the file
-	while [ ! -f $tmpJson ]
-	do
-		eval $wgetCmd
-	done
+	if [ "$(DownloadUrl "$1" "$outFile")" == "1" ]; then
+		return
+	fi 
 
-	# parse the json file
-	local RESP="$(cat $tmpJson)"
-	json_load "$RESP"
+	if [ $? -eq 0 ]; then
+		# parse the json file
+		local RESP="$(cat $outFile)"
+		json_load "$RESP"
 
-	# check the json file contents
-	json_get_var repoVersion version
+		# check the json file contents
+		json_get_var repoVersion version
 
-	repoVersionMajor=$(GetVersionMajor "$repoVersion")
-	repoVersionMinor=$(GetVersionMinor "$repoVersion")
-	repoVersionRev=$(GetVersionRevision "$repoVersion")
+		repoVersionMajor=$(GetVersionMajor "$repoVersion")
+		repoVersionMinor=$(GetVersionMinor "$repoVersion")
+		repoVersionRev=$(GetVersionRevision "$repoVersion")
 
-	json_get_var repoBuildNum build
+		json_get_var repoBuildNum build
 
-	# parse the binary url
-	json_get_var repoBinary url
-	binaryName=${repoBinary##*/}
+		# parse the binary url
+		json_get_var repoBinary url
+		binaryName=${repoBinary##*/}
 
-	localBinary="$tmpPath/$binaryName"
+		localBinary="$tmpPath/$binaryName"
+	fi
 }
 
 # function to add version info to json
@@ -229,9 +207,7 @@ if [ $bDeviceVersion == 1 ]; then
 	# find the version
 	GetDeviceVersion
 
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Device Firmware Version: $deviceVersion b$deviceBuildNum"
-	fi
+	Print "> Device Firmware Version: $deviceVersion b$deviceBuildNum"
 fi
 
 
@@ -246,16 +222,17 @@ if [ $bRepoVersion == 1 ]; then
 		repoFile="$repoUrl/$repoLatestFile"
 	fi
 
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Checking latest version online..."
-	fi
+	Print "> Checking latest version online..."
 
 	# fetch the repo version
-	GetRepoVersion
-
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Repo Firmware Version: $repoVersion b$repoBuildNum"
+	GetRepoVersion $repoFile
+	if [ "$repoVersion" == "" ]; then
+		Print "> ERROR: Could not connect to Onion Firmware Server! Check your internet connection and try again!"
+		CloseLog
+		exit
 	fi
+
+	Print "> Repo Firmware Version: $repoVersion b$repoBuildNum"
 else
 	# optional exit here if just getting device version 
 	if [ $bJsonOutput == 1 ]; then
@@ -264,6 +241,7 @@ else
 		json_dump
 	fi
 
+	CloseLog
 	exit
 fi
 
@@ -271,9 +249,7 @@ fi
 ## compare the versions
 if 	[ $bCheck == 1 ]
 then
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Comparing version numbers"
-	fi
+	Print "> Comparing version numbers"
 
 	if 	[ $repoVersionMajor -gt $deviceVersionMajor ]
 	then
@@ -343,6 +319,7 @@ fi
 ## exit route if only checking if upgrade is required
 if [ $bCheckOnly == 1 ]
 then
+	CloseLog
 	exit
 fi
 
@@ -350,10 +327,7 @@ fi
 ## perform the firmware upgrade
 if [ $bUpgrade == 1 ]
 then
-	if [ $bJsonOutput == 0 ]; then
-		echo "> Downloading new firmware ..."
-	fi
-
+	Print "> Downloading new firmware ..."
 	
 	# delete any local firmware with the same name
 	if [ -f $localBinary ]; then
@@ -375,19 +349,15 @@ then
 	# start firmware upgrade
 	if [ $? -eq 0 ]; then
 		sleep 5 	# wait 5 seconds before starting the firmware upgrade
-		if [ $bJsonOutput == 0 ]; then
-			echo "> Starting firmware upgrade...."
-		fi
+		Print "> Starting firmware upgrade...."
 
 		sysupgrade $localBinary
 	else
-		if [ $bJsonOutput == 0 ]; then
-			echo "> ERROR: Downloading firmware has failed! Try again!"
-		fi
+		Print "> ERROR: Downloading firmware has failed! Try again!"
 	fi
 fi
 
-
+CloseLog
 
 
 
