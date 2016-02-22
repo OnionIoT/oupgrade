@@ -41,20 +41,20 @@ timeout=500
 
 # function to print script usage
 Usage () {
-	echo "Functionality:"
-	echo "	Check if new Onion firmware is available and perform upgrade"
-	echo ""
-	echo "Usage: $0"
-	echo ""
-	echo "Arguments:"
-	echo " -help 		Print this usage prompt"
-	echo " -version 	Just print the current firmware version"
-	echo " -latest 	Use latest repo version (instead of stable version)"
-	echo " -force		Force the upgrade, regardless of versions"
-	echo " -check 	Only compare versions, do not actually update"
-	echo " -ubus 		Script outputs only json"
-	
-	echo ""
+    echo "Functionality:"
+    echo "  Check if new Onion firmware is available and perform upgrade"
+    echo ""
+    echo "Usage: $0"
+    echo ""
+    echo "Arguments:"
+    echo " -help        Print this usage prompt"
+    echo " -version     Just print the current firmware version"
+    echo " -latest      Use latest repo version (instead of stable version)"
+    echo " -force       Force the upgrade, regardless of versions"
+    echo " -check       Only compare versions, do not actually update"
+    echo " -ubus        Script outputs only json"
+
+    echo ""
 }
 
 # print to stdout if not doing json output
@@ -162,35 +162,35 @@ JsonAddVersion () {
 # read arguments
 while [ "$1" != "" ]
 do
-	case "$1" in
-    	-h|-help|--help)
-			bUsage=1
-	    ;;
-    	-v|-version|--version)
-			bDeviceVersion=1
-			bRepoVersion=0
-	    ;;
-	    -f|-force|--force)
-			bCheck=0
-			bUpgrade=1
-		;;
-		-c|-check|--check)
-			bCheckOnly=1
-		;;
-	    -l|-latest|--latest)
-			bLatest=1
-		;;
-	    -u|-ubus)
-			bJsonOutput=1
-	    ;;
-	    *)
-			echo "ERROR: Invalid Argument"
-			echo ""
-			bUsage=1
-	    ;;
-	esac
+    case "$1" in
+        -h|-help|--help)
+            bUsage=1
+        ;;
+        -v|-version|--version)
+            bDeviceVersion=1
+            bRepoVersion=0
+        ;;
+        -f|-force|--force)
+            bCheck=0
+            bUpgrade=1
+        ;;
+        -c|-check|--check)
+            bCheckOnly=1
+        ;;
+        -l|-latest|--latest)
+            bLatest=1
+        ;;
+        -u|-ubus)
+            bJsonOutput=1
+        ;;
+        *)
+            echo "ERROR: Invalid Argument"
+            echo ""
+            bUsage=1
+        ;;
+    esac
 
-	shift
+    shift
 done
 
 
