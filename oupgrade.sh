@@ -47,12 +47,12 @@ Usage () {
     echo "Usage: $0"
     echo ""
     echo "Arguments:"
-    echo " -help        Print this usage prompt"
-    echo " -version     Just print the current firmware version"
-    echo " -latest      Use latest repo version (instead of stable version)"
-    echo " -force       Force the upgrade, regardless of versions"
-    echo " -check       Only compare versions, do not actually update"
-    echo " -ubus        Script outputs only json"
+    echo " -h, --help        Print this usage prompt"
+    echo " -v, --version     Just print the current firmware version"
+    echo " -l, --latest      Use latest repo version (instead of stable version)"
+    echo " -f, --force       Force the upgrade, regardless of versions"
+    echo " -c, --check       Only compare versions, do not actually update"
+    echo " -u, --ubus        Script outputs only json"
 
     echo ""
 }
