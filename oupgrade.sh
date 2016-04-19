@@ -228,7 +228,6 @@ if [ $bRepoVersion == 1 ]; then
 	GetRepoVersion $repoFile
 	if [ "$repoVersion" == "" ]; then
 		Print "> ERROR: Could not connect to Onion Firmware Server! Check your internet connection and try again!"
-		CloseLog
 		exit
 	fi
 
@@ -241,7 +240,6 @@ else
 		json_dump
 	fi
 
-	CloseLog
 	exit
 fi
 
@@ -319,7 +317,6 @@ fi
 ## exit route if only checking if upgrade is required
 if [ $bCheckOnly == 1 ]
 then
-	CloseLog
 	exit
 fi
 
@@ -357,7 +354,6 @@ then
 	fi
 fi
 
-CloseLog
 
 
 
