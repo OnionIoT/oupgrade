@@ -31,7 +31,16 @@ binaryName=""
 
 
 tmpPath="/tmp"
-repoUrl="https://api.onion.io/omega/firmware"
+
+# change repo url based on device type
+if [ "$(GetDeviceType)" == "$DEVICE_OMEGA" ] 
+then
+	repoUrl="https://api.onion.io/omega/firmware"
+elif [ "$(GetDeviceType)" == "$DEVICE_OMEGA2" ]
+then
+	repoUrl="https://api.onion.io/omega2/firmware"
+fi
+
 repoStableFile="stable"
 repoLatestFile="latest"
 timeout=500
