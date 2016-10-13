@@ -29,6 +29,7 @@ repoBuildNum=""
 repoBinary=""
 binaryName=""
 
+fileSize=""
 
 tmpPath="/tmp"
 
@@ -94,6 +95,12 @@ GetVersionRevision () {
 	echo "$ret"
 }
 
+# function to read remote file size
+GetFileSize () {
+	ret=$(wget --spider $1 2>&1 | grep Length | awk '{print $2}')
+	echo "$ret"
+}
+
 # function to read device firmware version
 GetDeviceVersion () {
 	local ver=$(uci -q get onion.@onion[0].version)
@@ -147,6 +154,8 @@ GetRepoVersion () {
 		binaryName=${repoBinary##*/}
 
 		localBinary="$tmpPath/$binaryName"
+		
+		fileSize=$(GetFileSize "$repoBinary")
 	fi
 }
 
@@ -304,6 +313,7 @@ then
 	json_add_string "binary" "$binaryName"
 	json_add_string "url" "$repoBinary"
 	json_add_string "local" "$localBinary"
+	json_add_string "size" "$fileSize"
 	json_close_object
 
 	# version info
