@@ -40,6 +40,9 @@ then
 elif [ "$(GetDeviceType)" == "$DEVICE_OMEGA2" ]
 then
 	repoUrl="https://api.onion.io/omega2/firmware"
+elif [ "$(GetDeviceType)" == "$DEVICE_OMEGA2P" ]
+then
+	repoUrl="https://api.onion.io/omega2+/firmware"
 fi
 
 repoStableFile="stable"
