@@ -34,16 +34,10 @@ fileSize=""
 tmpPath="/tmp"
 
 # change repo url based on device type
-if [ "$(GetDeviceType)" == "$DEVICE_OMEGA" ] 
-then
-	repoUrl="https://api.onion.io/omega/firmware"
-elif [ "$(GetDeviceType)" == "$DEVICE_OMEGA2" ]
-then
-	repoUrl="https://api.onion.io/omega2/firmware"
-elif [ "$(GetDeviceType)" == "$DEVICE_OMEGA2P" ]
-then
-	repoUrl="https://api.onion.io/omega2+/firmware"
-fi
+urlBase="https://api.onion.io/firmware"
+device=$(ubus call system board | jsonfilter -e '@.board_name')
+
+repoUrl="$urlBase/$device"
 
 repoStableFile="stable"
 repoLatestFile="latest"
@@ -136,7 +130,7 @@ GetRepoVersion () {
 	# fetch the file
 	if [ "$(DownloadUrl "$1" "$outFile")" == "1" ]; then
 		return
-	fi 
+	fi
 
 	if [ $? -eq 0 ]; then
 		# parse the json file
@@ -157,7 +151,7 @@ GetRepoVersion () {
 		binaryName=${repoBinary##*/}
 
 		localBinary="$tmpPath/$binaryName"
-		
+
 		fileSize=$(GetFileSize "$repoBinary")
 	fi
 }
@@ -165,7 +159,7 @@ GetRepoVersion () {
 # function to add version info to json
 JsonAddVersion () {
 	json_add_object "$1"
-		
+
 	json_add_string "version" "$2"
 	json_add_int 	"major" "$3"
 	json_add_int 	"minor" "$4"
@@ -244,6 +238,7 @@ if [ $bRepoVersion == 1 ]; then
 	fi
 
 	Print "> Checking latest version online..."
+	Print "url: $repoFile"
 
 	# fetch the repo version
 	GetRepoVersion $repoFile
@@ -254,7 +249,7 @@ if [ $bRepoVersion == 1 ]; then
 
 	Print "> Repo Firmware Version: $repoVersion b$repoBuildNum"
 else
-	# optional exit here if just getting device version 
+	# optional exit here if just getting device version
 	if [ $bJsonOutput == 1 ]; then
 		json_init
 		JsonAddVersion "device" $deviceVersion $deviceVersionMajor $deviceVersionMinor $deviceVersionRev $deviceBuildNum
@@ -347,7 +342,7 @@ fi
 if [ $bUpgrade == 1 ]
 then
 	Print "> Downloading new firmware ..."
-	
+
 	# delete any local firmware with the same name
 	if [ -f $localBinary ]; then
 		eval rm -rf $localBinary
@@ -375,7 +370,3 @@ then
 		Print "> ERROR: Downloading firmware has failed! Try again!"
 	fi
 fi
-
-
-
-
