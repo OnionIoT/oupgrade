@@ -125,26 +125,30 @@ GetDeviceVersion () {
 # function to read latest repo version
 #	arg1	- url of file to download
 GetRepoVersion () {
+	local url="$1"
 	local outFile=$(mktemp)
 
 	# fetch the file
-	if [ "$(DownloadUrl "$1" "$outFile")" == "1" ]; then
-		return
-	fi
+	local resp=$(wget "$url" -O "$outFile" 2>&1)
+	local ret=$?
 
 	if [ $? -eq 0 ]; then
 		# parse the json file
 		local RESP="$(cat $outFile)"
+    # echo "response is $RESP"
+
 		json_load "$RESP"
 
 		# check the json file contents
 		json_get_var repoVersion version
+    # echo "repoVersion $repoVersion"
 
 		repoVersionMajor=$(GetVersionMajor "$repoVersion")
 		repoVersionMinor=$(GetVersionMinor "$repoVersion")
 		repoVersionRev=$(GetVersionRevision "$repoVersion")
 
 		json_get_var repoBuildNum build
+    # echo "repoBuildNum $repoBuildNum"
 
 		# parse the binary url
 		json_get_var repoBinary url
@@ -153,7 +157,12 @@ GetRepoVersion () {
 		localBinary="$tmpPath/$binaryName"
 
 		fileSize=$(GetFileSize "$repoBinary")
+
+    # echo "repoVersionMajor $repoVersionMajor"
+    # echo "repoVersionMinor $repoVersionMinor"
+    # echo "repoVersionRev $repoVersionRev"
 	fi
+	# echo "$ret"
 }
 
 # function to add version info to json
@@ -241,9 +250,10 @@ if [ $bRepoVersion == 1 ]; then
 	Print "url: $repoFile"
 
 	# fetch the repo version
-	GetRepoVersion $repoFile
+  GetRepoVersion $repoFile
+
 	if [ "$repoVersion" == "" ]; then
-		Print "> ERROR: Could not connect to Onion Firmware Server! Check your internet connection and try again!"
+		Print "> ERROR: Could not connect to Onion Firmware Server!"
 		exit
 	fi
 
