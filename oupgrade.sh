@@ -307,11 +307,7 @@ then
 	json_init
 
 	# upgrading firmware or not
-	if [ $bUpgrade == 1 ]; then
-		json_add_string "upgrade" "true"
-	else
-		json_add_string "upgrade" "false"
-	fi
+	json_add_boolean "upgrade" $bUpgrade
 
 	# version mismatch
 	json_add_boolean "build_mismatch" $bBuildMismatch
