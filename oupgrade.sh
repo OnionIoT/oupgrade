@@ -34,7 +34,7 @@ fileSize=""
 tmpPath="/tmp"
 
 # change repo url based on device type
-urlBase="https://api.onion.io/firmware"
+urlBase="https://api.onioniot.com/firmware"
 device=$(ubus call system board | jsonfilter -e '@.board_name')
 
 repoUrl="$urlBase/$device"
