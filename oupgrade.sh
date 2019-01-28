@@ -355,7 +355,7 @@ then
 	fi
 
 	# setup wget verbosity
-	local verbosity="-q"
+	verbosity="-q"
 	if [ $bJsonOutput == 0 ]; then
 		verbosity=""
 	fi
