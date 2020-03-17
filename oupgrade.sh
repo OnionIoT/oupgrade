@@ -190,20 +190,19 @@ JsonAddVersion () {
 
 # function to compare versions and determine if upgrade is necessary
 # arguments
-#		new version number - major number 
-#		new version number - minor number 
-#		new version number - revision number 
-#		old version number - major number 
-#		old version number - minor number 
-#		old version number - revision number 
+#		new version number 
+#		old version number 
 VersionNumberCompare () {
-	local newVersionMajor=$1
-	local newVersionMinor=$2
-	local newVersionRev=$3
+	local newVersion="$1"
+	local oldVersion="$2"
+
+	local newVersionMajor=$(GetVersionMajor "$newVersion")
+	local newVersionMinor=$(GetVersionMinor "$newVersion")
+	local newVersionRev=$(GetVersionRevision "$newVersion")
 	
-	local oldVersionMajor=$4
-	local oldVersionMinor=$5
-	local oldVersionRev=$6
+	local oldVersionMajor=$(GetVersionMajor "$oldVersion")
+	local oldVersionMinor=$(GetVersionMinor "$oldVersion")
+	local oldVersionRev=$(GetVersionRevision "$oldVersion")
 	
 	local bUpgradeReq=0
 	
@@ -296,8 +295,9 @@ HttpUpdateAcknowledge () {
 	# before performing HTTP request, check if update acknowledge is enable
 	local bEnabled=$(ReadUpdateAcknowledgeEnabled)
 	if [ $bEnabled == 1 ]; then
+		echo wget --post-data "$data" $urlBase
 		# TODO: test this out
-		wget --post-data "$data" $urlBase
+		#wget --post-data "$data" $urlBase
 	fi
 }
 
@@ -409,7 +409,7 @@ if [ $bCmdFwUpgrade == 1 ]; then
 	if 	[ $bCheck == 1 ]
 	then
 		Print "> Comparing version numbers"
-	  bUpgrade=$(VersionNumberCompare $repoVersionMajor $repoVersionMinor $repoVersionRev $deviceVersionMajor $deviceVersionMinor $deviceVersionRev)
+	  bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
 	fi
 
 
@@ -515,11 +515,7 @@ if [ $bCmdAcknowledge == 1 ]; then
 		recordedVersion=$(cat $notePath | awk '{print $1;}')
 		recordedBuildNumber=$(cat $notePath | awk '{print $2;}')
 		
-		recordedVersionMajor=$(GetVersionMajor "$recordedVersion")
-		recordedVersionMinor=$(GetVersionMinor "$recordedVersion")
-		recordedVersionRev=$(GetVersionRevision "$recordedVersion")
-		
-		bDiffVersion=$(VersionNumberCompare $deviceVersionMajor $deviceVersionMinor $deviceVersionRev $recordedVersionMajor $recordedVersionMinor $recordedVersionRev)
+		bDiffVersion=$(VersionNumberCompare $deviceVersion $recordedVersion)
 		bDiffBuild=$(BuildNumberCompare $deviceBuildNum $recordedBuildNumber)
 		
 		if [ $bDiffVersion == 1 ] || [ $bDiffBuild == 1 ]; then
