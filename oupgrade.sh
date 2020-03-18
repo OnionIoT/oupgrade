@@ -291,13 +291,23 @@ HttpUpdateAcknowledge () {
 	# 	firmware_build
 	#		upgrade_status (starting, complete)
 	local data="mac_addr=$(getMacAddr)&device=$(ubus call system board | jsonfilter -e '@.board_name')&firmware_version=${1}&firmware_build=${2}&upgrade_status=${3}"
+	local verbosity="-q"
 	
 	# before performing HTTP request, check if update acknowledge is enable
 	local bEnabled=$(ReadUpdateAcknowledgeEnabled)
 	if [ $bEnabled == 1 ]; then
-		echo wget --post-data "$data" $urlBase
-		# TODO: test this out
-		#wget --post-data "$data" $urlBase
+		count=0
+		maxCount=10
+		while [ 1 ]; do
+			wget $verbosity --post-data "$data" $urlBase
+			if [ $? == 0 ] || [ $count -gt $maxCount ]; then
+				break
+			fi
+			
+			# wait and try again
+			sleep 1
+			count=$(($count+1))
+		done
 	fi
 }
 
