@@ -6,7 +6,11 @@
 # setup variables
 bCmdUsage=0
 bCmdFwUpgrade=1
+bCmdDeviceVersion=0
+bCmdCheck=0
 bCmdAcknowledge=0
+
+bForceUpgrade=0
 
 bDeviceVersion=1
 bRepoVersion=1
@@ -113,7 +117,7 @@ _get_uci_value()
 #	arg1	- the text to print
 Print () {
 	if [ $bJsonOutput == 0 ]; then
-		echo "$1"
+		echo "$1" > /dev/console
 	fi
 }
 
@@ -229,6 +233,65 @@ JsonAddVersion () {
 	json_close_object
 }
 
+# function to add version info to json
+# arguments
+#		object name
+#		version number
+# 	build number
+JsonAddVersionInfo () {
+	# local versionNumber="$2"
+	json_add_object "$1"
+	
+	local major=$(GetVersionMajor "$2")
+	local minor=$(GetVersionMinor "$2")
+	local rev=$(GetVersionRevision "$2")
+
+	json_add_string "version" "$2"
+	json_add_int 	"major" "$major"
+	json_add_int 	"minor" "$minor"
+	json_add_int 	"revision" "$rev"
+	json_add_int 	"build" "$3"
+
+	json_close_object
+}
+
+generateScriptInfoOutput () {
+	
+	if [ $bJsonOutput == 1 ]
+	then
+		
+		## json output
+		json_init
+
+		# upgrading firmware or not
+		json_add_boolean "upgrade" $1
+		# version mismatch
+		json_add_boolean "build_mismatch" $2
+		#image info
+		json_add_object "image"
+		json_add_string "binary" "$3"
+		json_add_string "url" "$4"
+		json_add_string "local" "$5"
+		json_add_string "size" "$6"
+		json_close_object
+
+		# version info
+		JsonAddVersionInfo "device" $7 $8
+		JsonAddVersionInfo "repo" $9 $10
+
+		json_dump > /dev/console
+	else
+		# stdout
+		if [ $1 == 1 ]; then
+			Print "> New firmware version available, need to upgrade device firmware"
+		elif [ $2 == 1 ]; then
+			Print "> New build of current firmware available, upgrade is optional, rerun with '-force' option to upgrade"
+		else
+			Print "> Device firmware is up to date!"
+		fi
+	fi
+}
+
 # function to compare versions and determine if upgrade is necessary
 # arguments
 #		new version number 
@@ -339,8 +402,12 @@ HttpUpdateAcknowledge () {
 		count=0
 		maxCount=10
 		while [ 1 ]; do
-			wget $verbosity --post-data "$data" $urlBase
-			if [ $? == 0 ] || [ $count -gt $maxCount ]; then
+			wget $verbosity --post-data "$data" -O /tmp/null $urlBase
+			if [ $? -eq 0 ]; then
+				break
+			fi
+			if [ $count -gt $maxCount ]; then
+				_log "Not able to send upgrade acknowledge after $maxCount retries"
 				break
 			fi
 			
@@ -349,6 +416,187 @@ HttpUpdateAcknowledge () {
 			count=$(($count+1))
 		done
 	fi
+}
+
+printDeviceVersion () {
+	local ret
+	Print "> Device Firmware Version: $deviceVersion b$deviceBuildNum"
+	if [ $bJsonOutput == 1 ]; then
+		json_init
+		JsonAddVersionInfo "device" $deviceVersion $deviceBuildNum
+		ret=$(json_dump)
+	fi
+	echo "$ret"
+}
+
+# arguments
+#	 bLatestFirmware : 1 for latest, 0 for stable
+buildFirmwareUrl () {
+	local bLatestFirmware=$1
+	local urlBase=$(ReadFirmwareApiUrl)
+	local device=$(ubus call system board | jsonfilter -e '@.board_name')
+	local firmwareType="stable"
+	local url
+	
+	if [ "$bLatestFirmware" == "1" ]; then
+		# use the stable version
+		firmwareType="latest"
+	fi
+	
+	url="${urlBase}/${device}/${firmwareType}"
+	_log "Using firmware url $url"
+	echo "$url"
+}
+
+# arguments
+#	 bLatestFirmware : 1 for latest, 0 for stable
+getOnlineFirmwareInfo () {
+	local bLatestFirmware=$1
+	local url=$(buildFirmwareUrl $bLatestFirmware)
+	local resp
+	local outFile=$(mktemp)
+	
+	Print "> Checking latest version online..."
+	Print "url: $url"
+	
+	local count=0
+	local maxCount=10
+	while [ 1 ]; do
+		resp=$(wget "$url" -O "$outFile" 2>&1)
+		
+		if [ $? -eq 0 ]; then
+			break
+		fi 
+		if [ $count -gt $maxCount ]; then
+			_log "Not able to communicate with firmware API after $maxCount retries"
+			break
+		fi
+		
+		sleep 1
+		count=$(($count+1))
+	done
+	
+	echo $(cat $outFile)
+	return $?
+}
+
+downloadInstallFirmware () {
+	local localBinaryPath="$1"
+	local binaryUrl="$2"
+	local repoVersion="$3"
+	local repoBuildNum="$4"
+	
+	Print "> Downloading new firmware ..."
+
+	# delete any local firmware with the same name
+	if [ -f $localBinaryPath ]; then
+		eval rm -rf $localBinaryPath
+	fi
+	# setup wget verbosity
+	verbosity="-q"
+	if [ $bJsonOutput == 0 ]; then
+		verbosity=""
+	fi
+
+	# download the new firmware
+	count=0
+	maxCount=10
+	while [ 1 ]; do
+		wget $verbosity -O $localBinaryPath "$binaryUrl"
+		if [ $? -eq 0 ]; then
+			break
+		fi
+		if [ $count -gt $maxCount ]; then
+			_log "Not able to download firmware after $maxCount retries"
+			Print "> ERROR: Downloading firmware has failed! Try again!"
+			_exit 1
+		fi
+		
+		# wait and try again
+		sleep 1
+		count=$(($count+1))
+	done
+	
+	# start firmware upgrade
+	Print "> Starting firmware upgrade...."
+	HttpUpdateAcknowledge $repoVersion $repoBuildNum "starting"
+	sleep 5 	# wait 5 seconds before starting the firmware upgrade
+	
+	if [ $bDebug == 0	 ]; then
+		sysupgrade $localBinaryPath
+	fi
+}
+
+checkUpgradeRequired () {
+	local bLatest=$1
+	_log "checkUpgradeRequired bLatest = $bLatest"
+	printDeviceVersion
+	fwInfo=$(getOnlineFirmwareInfo $bLatest)
+	
+	# parse json response
+	json_load "$fwInfo"
+	local repoVersion
+	json_get_var repoVersion version
+	local repoVersionMajor=$(GetVersionMajor "$repoVersion")
+	local repoVersionMinor=$(GetVersionMinor "$repoVersion")
+	local repoVersionRev=$(GetVersionRevision "$repoVersion")
+	local repoBuildNum
+	json_get_var repoBuildNum build
+	local binaryUrl
+	json_get_var binaryUrl url
+	local binaryName=${binaryUrl##*/}
+	local localBinaryPath="$tmpPath/$binaryName"
+	local fileSize=$(GetFileSize "$binaryUrl")
+	
+	if [ "$repoVersion" == "" ]; then
+		Print "> ERROR: Could not connect to Onion Firmware Server!"
+		_exit 1
+	fi
+	Print "> Repo Firmware Version: $repoVersion b$repoBuildNum"
+	
+	# compare version numbers
+	Print "> Comparing version numbers"
+	local bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
+	local bBuildMismatch
+	## compare the build numbers (only if versions are the same)
+	if 	[ $bUpgrade == 0 ]
+	then
+		bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
+	fi
+	
+	## generate script info output (json and stdout)
+	generateScriptInfoOutput $bUpgrade $bBuildMismatch $binaryName $binaryUrl $localBinaryPath $fileSize $deviceVersion $deviceBuildNum $repoVersion $repoBuildNum
+
+	echo "$fwInfo"
+	return $bUpgrade
+}
+
+firmwareUpgrade1 () {
+	local bLatest=$1
+	local bForceUpgrade=$2
+	local fwInfo
+	local bUpgrade
+	
+	fwInfo=$(checkUpgradeRequired $1)
+	bUpgrade=$?
+	
+	_log "upgrade required = $bUpgrade"
+	
+	## parse the json fw info
+	json_load "$fwInfo"
+	local binaryUrl
+	json_get_var binaryUrl url
+	local binaryName=${binaryUrl##*/}
+	local localBinaryPath="$tmpPath/$binaryName"
+	local repoVersion
+	json_get_var repoVersion version
+	local repoBuildNum
+	json_get_var repoBuildNum build
+	
+	## perform the upgrade if needed
+	if [ $bUpgrade -eq 1 ] || [ $bForceUpgrade -eq 1 ]; then		
+		downloadInstallFirmware $localBinaryPath $binaryUrl $repoVersion $repoBuildNum
+	fi 
 }
 
 # perform a firmware upgrade if required
@@ -586,20 +834,15 @@ repoUrl="$urlBase/$device"
 while [ "$1" != "" ]
 do
 	case "$1" in
+		# options
 		-h|-help|--help)
 			bCmdUsage=1
-		;;
-		-v|-version|--version)
-			bDeviceVersion=1
-			bRepoVersion=0
 		;;
 		-f|-force|--force)
 			bCheck=0
 			bUpgrade=1
-		;;
-		-c|-check|--check)
-			bCheckOnly=1
-		;;
+			bForceUpgrade=1
+		;;	
 		-l|-latest|--latest)
 			bLatest=1
 		;;
@@ -609,9 +852,16 @@ do
 		-d|-debug|--debug)
 			bDebug=1
 		;;
-		-a|-acknowledge|--acknowledge)
-			bCmdFwUpgrade=0
-			bCmdAcknowledge=1
+		## specific operations
+		-v|-version|--version|version)
+			bCmdDeviceVersion=1
+		;;
+		-c|-check|--check|check)
+			bCmdCheck=1
+		;;
+		-a|-acknowledge|--acknowledge|acknowledge)
+			upgradeCompleteAcknowledge
+			_exit 0
 		;;
 		autoupdate|-autoupdate|--autoupdate)
 			check_cron_status
@@ -636,14 +886,13 @@ then
 fi
 
 
-
-
-## perform firmware upgrade
-if [ $bCmdFwUpgrade == 1 ]; then 
-	firmwareUpgrade
+## perform commands
+if [ $bCmdDeviceVersion == 1 ]; then
+	ver=$(printDeviceVersion)
+	echo $ver
+elif [ $bCmdCheck == 1 ]; then
+	ret=$(checkUpgradeRequired $bLatest)
+elif [ $bCmdFwUpgrade == 1 ]; then 
+	#firmwareUpgrade
+	firmwareUpgrade1 $bLatest $bForceUpgrade
 fi 
-
-## acknowledge completed firmware upgrade
-if [ $bCmdAcknowledge == 1 ]; then
-	upgradeCompleteAcknowledge
-fi
