@@ -47,6 +47,10 @@ repoStableFile="stable"
 repoLatestFile="latest"
 timeout=500
 
+LOGGING=1
+LOGFILE="/tmp/oupgrade.log"
+PACKAGE=onion
+FIRMWARE_CONFIG=${PACKAGE}.@${PACKAGE}[0]
 
 
 
@@ -66,6 +70,35 @@ Usage () {
 		echo " -u, --ubus        Script outputs only json"
 
 		echo ""
+}
+
+_log()
+{
+		if [ ${LOGGING} -eq 1 ]; then
+				local ts=$(date)
+				echo "$ts $@" >> ${LOGFILE}
+		fi
+}
+
+_get_uci_value_raw()
+{
+		local value
+		value=$(uci -q get $1 2> /dev/null)
+		local rc=$?
+		echo ${value}
+		return ${rc}
+}
+
+_get_uci_value()
+{
+		local value
+		value=$(_get_uci_value_raw $1)
+		local rc=$?
+		if [ ${rc} -ne 0 ]; then
+				_log "Could not determine UCI value $1"
+				return 1
+		fi
+		echo ${value}
 }
 
 # print to stdout if not doing json output
@@ -110,7 +143,7 @@ GetFileSize () {
 #     deviceVersionRev
 #     deviceBuildNum
 GetDeviceVersion () {
-	local ver=$(uci -q get onion.@onion[0].version)
+	local ver=$(_get_uci_value ${FIRMWARE_CONFIG}.version)
 	if [ "$ver" != "" ]; then
 		# read the device version
 		deviceVersion=$ver
@@ -121,7 +154,7 @@ GetDeviceVersion () {
 		deviceVersionRev=$(GetVersionRevision "$deviceVersion")
 
 		# read the build number
-		local build=$(uci -q get onion.@onion[0].build)
+		local build=$(_get_uci_value ${FIRMWARE_CONFIG}.build)
 		if [ "$build" != "" ]; then
 			deviceBuildNum=$build
 		else
@@ -230,7 +263,6 @@ VersionNumberCompare () {
 BuildNumberCompare () {
 	local newBuildNumber=$1
 	local oldBuildNumber=$2
-	local newVersionRev=$3
 	
 	local bBuildsDiff=0
 	
@@ -243,7 +275,7 @@ BuildNumberCompare () {
 
 # read firmware API from UCI
 ReadFirmwareApiUrl () {
-	local url=$(uci -q get onion.oupgrade.url)
+	local url=$(_get_uci_value ${PACKAGE}.oupgrade.url)
 	# keep hardcoded default as a fallback
 	if [ "$url" == "" ]; then
 		url="https://api.onioniot.com/firmware"
@@ -254,7 +286,7 @@ ReadFirmwareApiUrl () {
 # read if update acknowledge is enabled
 ReadUpdateAcknowledgeEnabled () {
 	local ret=0
-	local bEnabled=$(uci -q get onion.oupgrade.ack)
+	local bEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.ack)
 	if [ "$bEnabled" == 1 ]; then
 		ret=1
 	fi
@@ -311,69 +343,8 @@ HttpUpdateAcknowledge () {
 	fi
 }
 
-
-
-########################
-##### Main Program #####
-
-# read arguments
-while [ "$1" != "" ]
-do
-		case "$1" in
-				-h|-help|--help)
-						bCmdUsage=1
-				;;
-				-v|-version|--version)
-						bDeviceVersion=1
-						bRepoVersion=0
-				;;
-				-f|-force|--force)
-						bCheck=0
-						bUpgrade=1
-				;;
-				-c|-check|--check)
-						bCheckOnly=1
-				;;
-				-l|-latest|--latest)
-						bLatest=1
-				;;
-				-u|-ubus|-j|-json|--json)
-						bJsonOutput=1
-				;;
-				-d|-debug|--debug)
-						bDebug=1
-				;;
-				-a|-acknowledge|--acknowledge)
-						bCmdFwUpgrade=0
-						bCmdAcknowledge=1
-				;;
-				*)
-						echo "ERROR: Invalid Argument"
-						echo ""
-						bCmdUsage=1
-				;;
-		esac
-
-		shift
-done
-
-
-## print the script usage
-if [ $bCmdUsage == 1 ]
-then
-	Usage
-	exit
-fi
-
-### populate important global variables
-GetDeviceVersion
-urlBase=$(ReadFirmwareApiUrl)
-device=$(ubus call system board | jsonfilter -e '@.board_name')
-repoUrl="$urlBase/$device"
-
-
-## perform firmware upgrade
-if [ $bCmdFwUpgrade == 1 ]; then 
+# perform a firmware upgrade if required
+firmwareUpgrade () {
 	## get the current version
 	if [ $bDeviceVersion == 1 ]; then
 		Print "> Device Firmware Version: $deviceVersion b$deviceBuildNum"
@@ -419,14 +390,14 @@ if [ $bCmdFwUpgrade == 1 ]; then
 	if 	[ $bCheck == 1 ]
 	then
 		Print "> Comparing version numbers"
-	  bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
+		bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
 	fi
 
 
 	## compare the build numbers (only if versions are the same)
 	if 	[ $bUpgrade == 0 ]
 	then
-	  bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
+		bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
 	fi
 
 
@@ -509,11 +480,10 @@ if [ $bCmdFwUpgrade == 1 ]; then
 			Print "> ERROR: Downloading firmware has failed! Try again!"
 		fi
 	fi
-fi 
+}
 
-## acknowledge completed firmware upgrade
-if [ $bCmdAcknowledge == 1 ]; then
-	bAckRequired=0
+upgradeCompleteAcknowledge () {
+	local bAckRequired=0
 	
 	# check if firmware has just been updated by checking the oupgrade note file:
 	# 1. if the note file doesn't exist - upgrade has been completed -> create note file and acknowledge update
@@ -522,25 +492,98 @@ if [ $bCmdAcknowledge == 1 ]; then
 	
 	# check if firmware note file exists
 	if [ -f $notePath ]; then
-		recordedVersion=$(cat $notePath | awk '{print $1;}')
-		recordedBuildNumber=$(cat $notePath | awk '{print $2;}')
+		_log "note file $notePath exists"
+		local recordedVersion=$(cat $notePath | awk '{print $1;}')
+		local recordedBuildNumber=$(cat $notePath | awk '{print $2;}')
 		
-		bDiffVersion=$(VersionNumberCompare $deviceVersion $recordedVersion)
-		bDiffBuild=$(BuildNumberCompare $deviceBuildNum $recordedBuildNumber)
+		local bDiffVersion=$(VersionNumberCompare $deviceVersion $recordedVersion)
+		local bDiffBuild=$(BuildNumberCompare $deviceBuildNum $recordedBuildNumber)
 		
 		if [ $bDiffVersion == 1 ] || [ $bDiffBuild == 1 ]; then
+			_log "note file holds different version"
 			bAckRequired=1
 		fi
 	else
+		_log "note file $notePath does not exist"
 		bAckRequired=1
-  fi
+	fi
 	
 	# peform the acknowledge if required
 	if [ $bAckRequired == 1 ]; then
+		_log "upgrade acknowledge required" 
 		#update the note file
-		payload="$deviceVersion $deviceBuildNum"
-		echo $payload > $notePath
+		echo "$deviceVersion $deviceBuildNum" > $notePath
 		# perform the update acknowledge
 		HttpUpdateAcknowledge $deviceVersion $deviceBuildNum "complete"
 	fi
+}
+
+
+########################
+##### Main Program #####
+
+# read arguments
+while [ "$1" != "" ]
+do
+	case "$1" in
+		-h|-help|--help)
+			bCmdUsage=1
+		;;
+		-v|-version|--version)
+			bDeviceVersion=1
+			bRepoVersion=0
+		;;
+		-f|-force|--force)
+			bCheck=0
+			bUpgrade=1
+		;;
+		-c|-check|--check)
+			bCheckOnly=1
+		;;
+		-l|-latest|--latest)
+			bLatest=1
+		;;
+		-u|-ubus|-j|-json|--json)
+			bJsonOutput=1
+		;;
+		-d|-debug|--debug)
+			bDebug=1
+		;;
+		-a|-acknowledge|--acknowledge)
+			bCmdFwUpgrade=0
+			bCmdAcknowledge=1
+		;;
+		*)
+			echo "ERROR: Invalid Argument"
+			echo ""
+			bCmdUsage=1
+		;;
+	esac
+
+	shift
+done
+
+
+## print the script usage
+if [ $bCmdUsage == 1 ]
+then
+	Usage
+	exit
+fi
+
+### populate important global variables
+GetDeviceVersion
+urlBase=$(ReadFirmwareApiUrl)
+device=$(ubus call system board | jsonfilter -e '@.board_name')
+repoUrl="$urlBase/$device"
+
+
+## perform firmware upgrade
+if [ $bCmdFwUpgrade == 1 ]; then 
+	firmwareUpgrade
+fi 
+
+## acknowledge completed firmware upgrade
+if [ $bCmdAcknowledge == 1 ]; then
+	upgradeCompleteAcknowledge
 fi
