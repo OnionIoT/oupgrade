@@ -47,6 +47,8 @@ repoStableFile="stable"
 repoLatestFile="latest"
 timeout=500
 
+SCRIPT=$0
+
 LOGGING=1
 LOGFILE="/tmp/oupgrade.log"
 PACKAGE=onion
@@ -78,6 +80,12 @@ _log()
 				local ts=$(date)
 				echo "$ts $@" >> ${LOGFILE}
 		fi
+}
+
+_exit()
+{
+    local rc=$1
+    exit ${rc}
 }
 
 _get_uci_value_raw()
@@ -275,7 +283,7 @@ BuildNumberCompare () {
 
 # read firmware API from UCI
 ReadFirmwareApiUrl () {
-	local url=$(_get_uci_value ${PACKAGE}.oupgrade.url)
+	local url=$(_get_uci_value ${PACKAGE}.oupgrade.api_url)
 	# keep hardcoded default as a fallback
 	if [ "$url" == "" ]; then
 		url="https://api.onioniot.com/firmware"
@@ -286,7 +294,7 @@ ReadFirmwareApiUrl () {
 # read if update acknowledge is enabled
 ReadUpdateAcknowledgeEnabled () {
 	local ret=0
-	local bEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.ack)
+	local bEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.ack_upgrade)
 	if [ "$bEnabled" == 1 ]; then
 		ret=1
 	fi
@@ -518,9 +526,61 @@ upgradeCompleteAcknowledge () {
 	fi
 }
 
+_cron_restart()
+{
+	/etc/init.d/cron restart > /dev/null
+}
+
+_add_cron_script()
+{
+	(crontab -l ; echo "$1") | sort | uniq | crontab -
+	_cron_restart
+}
+
+_rm_cron_script()
+{
+	crontab -l | grep -v "$1" |  sort | uniq | crontab -
+	_cron_restart
+}
+
+_create_cron_entries() {
+	local updateFrequency
+	updateFrequency=$(_get_uci_value ${PACKAGE}.oupgrade.update_frequency) || _exit 1
+	
+	local cronInterval
+	if [ "$updateFrequency" == "daily" ]; then
+		cronInterval="0 0 * * *"
+	elif [ "$updateFrequency" == "weekly" ]; then
+		cronInterval="0 0 * * 0"
+	elif [ "$updateFrequency" == "monthly" ]; then
+		cronInterval="0 0 1 * *"
+	else
+	  _log "Invalid automatic update frequency"
+		_exit 1
+	fi
+	
+	_add_cron_script "${cronInterval} ${SCRIPT} -l -f  # ${updateFrequency} automatic firmware upgrade"
+}
+
+check_cron_status()
+{
+	local autoUpdateEnabled
+	autoUpdateEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.auto_update) || _exit 1
+	_rm_cron_script "${SCRIPT}"
+	if [ ${autoUpdateEnabled} -eq 1 ]; then
+		_create_cron_entries 
+	fi
+}
+
 
 ########################
 ##### Main Program #####
+
+### populate important global variables
+GetDeviceVersion
+urlBase=$(ReadFirmwareApiUrl)
+device=$(ubus call system board | jsonfilter -e '@.board_name')
+repoUrl="$urlBase/$device"
 
 # read arguments
 while [ "$1" != "" ]
@@ -553,6 +613,10 @@ do
 			bCmdFwUpgrade=0
 			bCmdAcknowledge=1
 		;;
+		autoupdate|-autoupdate|--autoupdate)
+			check_cron_status
+			_exit 0
+		;;
 		*)
 			echo "ERROR: Invalid Argument"
 			echo ""
@@ -568,14 +632,10 @@ done
 if [ $bCmdUsage == 1 ]
 then
 	Usage
-	exit
+	_exit 0
 fi
 
-### populate important global variables
-GetDeviceVersion
-urlBase=$(ReadFirmwareApiUrl)
-device=$(ubus call system board | jsonfilter -e '@.board_name')
-repoUrl="$urlBase/$device"
+
 
 
 ## perform firmware upgrade
