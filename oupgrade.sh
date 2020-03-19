@@ -27,9 +27,10 @@ timeout=500
 SCRIPT=$0
 
 LOGGING=1
-LOGFILE="/tmp/oupgrade.log"
+LOGFILE="${tmpPath}/oupgrade.log"
 PACKAGE=onion
 FIRMWARE_CONFIG=${PACKAGE}.@${PACKAGE}[0]
+DEFAULT_URL="https://api.onioniot.com/firmware"
 
 
 
@@ -266,7 +267,8 @@ ReadFirmwareApiUrl () {
 	local url=$(_get_uci_value ${PACKAGE}.oupgrade.api_url)
 	# keep hardcoded default as a fallback
 	if [ "$url" == "" ]; then
-		url="https://api.onioniot.com/firmware"
+		_log "Using default firmware API URL: $DEFAULT_URL"
+		url="$DEFAULT_URL"
 	fi
 	echo "$url"
 }
@@ -317,12 +319,13 @@ HttpUpdateAcknowledge () {
 	# before performing HTTP request, check if update acknowledge is enable
 	local bEnabled=$(ReadUpdateAcknowledgeEnabled)
 	if [ $bEnabled == 1 ]; then
+		_log "attempting upgrade acknowledge: $3 $1 $2"
 		count=0
 		maxCount=10
 		while [ 1 ]; do
 			wget $verbosity --post-data "$data" -O /tmp/null $urlBase
 			if [ $? -eq 0 ]; then
-				_log "update acknowledge successful"
+				_log "> update acknowledge successful"
 				break
 			fi
 			if [ $count -gt $maxCount ]; then
@@ -453,7 +456,7 @@ downloadInstallFirmware () {
 
 checkUpgradeRequired () {
 	local bLatest=$1
-	_log "checkUpgradeRequired bLatest = $bLatest"
+	_log "checkUpgradeRequired: bLatest = $bLatest"
 	printDeviceVersion
 	fwInfo=$(getOnlineFirmwareInfo $bLatest)
 	
@@ -507,10 +510,13 @@ firmwareUpgrade () {
 	local fwInfo
 	local bUpgrade
 	
+	_log " - operation: firmware upgrade"
+	
 	fwInfo=$(checkUpgradeRequired $1)
 	bUpgrade=$?
 	
 	_log "upgrade required = $bUpgrade"
+	_log "force upgrade    = $bForceUpgrade"
 	
 	## parse the json fw info
 	json_load "$fwInfo"
@@ -534,6 +540,8 @@ upgradeCompleteAcknowledge () {
 	local deviceVersion=$(_get_uci_value ${FIRMWARE_CONFIG}.version)
 	local deviceBuildNum=$(_get_uci_value ${FIRMWARE_CONFIG}.build)
 	
+	_log " - operation: upgrade complete acknowledge"
+	
 	# check if firmware has just been updated by checking the oupgrade note file:
 	# 1. if the note file doesn't exist - upgrade has been completed -> create note file and acknowledge update
 	# 2. if note file exists and version data doesn't match that of the device -> update note file and acknowledge update
@@ -541,7 +549,7 @@ upgradeCompleteAcknowledge () {
 	
 	# check if firmware note file exists
 	if [ -f $notePath ]; then
-		_log "note file $notePath exists"
+		_log "version note file $notePath exists"
 		local recordedVersion=$(cat $notePath | awk '{print $1;}')
 		local recordedBuildNumber=$(cat $notePath | awk '{print $2;}')
 		
@@ -549,7 +557,7 @@ upgradeCompleteAcknowledge () {
 		local bDiffBuild=$(BuildNumberCompare $deviceBuildNum $recordedBuildNumber)
 		
 		if [ $bDiffVersion == 1 ] || [ $bDiffBuild == 1 ]; then
-			_log "note file holds different version"
+			_log "version note file holds different version"
 			bAckRequired=1
 		fi
 	else
@@ -677,6 +685,7 @@ if [ $bCmdDeviceVersion == 1 ]; then
 	ver=$(printDeviceVersion)
 	echo $ver
 elif [ $bCmdCheck == 1 ]; then
+	_log " - operation: check if upgrade required"
 	ret=$(checkUpgradeRequired $bLatest)
 elif [ $bCmdFwUpgrade == 1 ]; then 
 	#firmwareUpgrade
