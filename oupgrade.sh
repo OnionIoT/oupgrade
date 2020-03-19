@@ -193,9 +193,7 @@ generateScriptInfoOutput () {
 	json_add_boolean "build_mismatch" $2
 	#image info
 	json_add_object "image"
-	_log "binary = $3"
 	json_add_string "binary" "$3"
-	_log "url = $4"
 	json_add_string "url" "$4"
 	json_add_string "local" "$5"
 	json_add_string "size" "$6"
@@ -443,7 +441,7 @@ downloadInstallFirmware () {
 		_log wget $verbosity -O $localBinaryPath "$binaryUrl"
 		wget $verbosity -O $localBinaryPath "$binaryUrl"
 		if [ $? -eq 0 ]; then
-			_log "Firmware download successfull"
+			_log "Firmware download successful"
 			break
 		fi
 		if [ $count -gt $maxCount ]; then
@@ -504,7 +502,7 @@ checkUpgradeRequired () {
 	# compare version numbers
 	Print "> Comparing version numbers"
 	local bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
-	local bBuildMismatch
+	local bBuildMismatch=0
 	## compare the build numbers (only if versions are the same)
 	if 	[ $bUpgrade == 0 ]
 	then
