@@ -182,31 +182,32 @@ JsonAddVersionInfo () {
 }
 
 generateScriptInfoOutput () {
+
+	local ret
+	## json output
+	json_init
+
+	# upgrading firmware or not
+	json_add_boolean "upgrade" $1
+	# version mismatch
+	json_add_boolean "build_mismatch" $2
+	#image info
+	json_add_object "image"
+	_log "binary = $3"
+	json_add_string "binary" "$3"
+	_log "url = $4"
+	json_add_string "url" "$4"
+	json_add_string "local" "$5"
+	json_add_string "size" "$6"
+	json_close_object
+
+	# version info
+	JsonAddVersionInfo "device" $7 $8
+	JsonAddVersionInfo "repo" $9 $10
+
+	ret=$(json_dump)
 	
-	if [ $bJsonOutput == 1 ]
-	then
-		
-		## json output
-		json_init
-
-		# upgrading firmware or not
-		json_add_boolean "upgrade" $1
-		# version mismatch
-		json_add_boolean "build_mismatch" $2
-		#image info
-		json_add_object "image"
-		json_add_string "binary" "$3"
-		json_add_string "url" "$4"
-		json_add_string "local" "$5"
-		json_add_string "size" "$6"
-		json_close_object
-
-		# version info
-		JsonAddVersionInfo "device" $7 $8
-		JsonAddVersionInfo "repo" $9 $10
-
-		json_dump > /dev/console
-	else
+	if [ $bJsonOutput != 1 ]; then
 		# stdout
 		if [ $1 == 1 ]; then
 			Print "> New firmware version available, need to upgrade device firmware"
@@ -216,6 +217,8 @@ generateScriptInfoOutput () {
 			Print "> Device firmware is up to date!"
 		fi
 	fi
+	
+	echo $ret
 }
 
 # function to compare versions and determine if upgrade is necessary
@@ -421,6 +424,7 @@ downloadInstallFirmware () {
 	local repoBuildNum="$4"
 	
 	Print "> Downloading new firmware ..."
+	_log "downloading installing new firmware: v${repoVersion} b${repoBuildNum} from ${binaryUrl} to ${localBinaryPath}"
 
 	# delete any local firmware with the same name
 	if [ -f $localBinaryPath ]; then
@@ -436,6 +440,7 @@ downloadInstallFirmware () {
 	count=0
 	maxCount=10
 	while [ 1 ]; do
+		_log wget $verbosity -O $localBinaryPath "$binaryUrl"
 		wget $verbosity -O $localBinaryPath "$binaryUrl"
 		if [ $? -eq 0 ]; then
 			_log "Firmware download successfull"
@@ -465,7 +470,7 @@ downloadInstallFirmware () {
 checkUpgradeRequired () {
 	local bLatest=$1
 	_log "checkUpgradeRequired: bLatest = $bLatest"
-	printDeviceVersion
+	val=$(printDeviceVersion)
 	fwInfo=$(getOnlineFirmwareInfo $bLatest)
 	
 	local deviceVersion
@@ -474,6 +479,7 @@ checkUpgradeRequired () {
 	deviceBuildNum=$(_get_uci_value ${FIRMWARE_CONFIG}.build)
 	
 	# parse json response
+	json_init
 	json_load "$fwInfo"
 	local repoVersion
 	json_get_var repoVersion version
@@ -487,6 +493,7 @@ checkUpgradeRequired () {
 	local binaryName=${binaryUrl##*/}
 	local localBinaryPath="$tmpPath/$binaryName"
 	local fileSize=$(GetFileSize "$binaryUrl")
+
 	
 	if [ "$repoVersion" == "" ]; then
 		Print "> ERROR: Could not connect to Onion Firmware Server!"
@@ -503,11 +510,11 @@ checkUpgradeRequired () {
 	then
 		bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
 	fi
-	
-	## generate script info output (json and stdout)
-	generateScriptInfoOutput $bUpgrade $bBuildMismatch $binaryName $binaryUrl $localBinaryPath $fileSize $deviceVersion $deviceBuildNum $repoVersion $repoBuildNum
 
-	echo "$fwInfo"
+	## generate script info output (json and stdout)
+	info=$(generateScriptInfoOutput $bUpgrade $bBuildMismatch $binaryName $binaryUrl $localBinaryPath $fileSize $deviceVersion $deviceBuildNum $repoVersion $repoBuildNum)
+
+	echo "$info"
 	return $bUpgrade
 }
 
@@ -527,11 +534,15 @@ firmwareUpgrade () {
 	_log "force upgrade    = $bForceUpgrade"
 	
 	## parse the json fw info
+	json_init
 	json_load "$fwInfo"
+	json_select image
 	local binaryUrl
 	json_get_var binaryUrl url
 	local binaryName=${binaryUrl##*/}
 	local localBinaryPath="$tmpPath/$binaryName"
+	json_select ..
+	json_select repo
 	local repoVersion
 	json_get_var repoVersion version
 	local repoBuildNum
@@ -694,10 +705,15 @@ fi
 ## perform commands
 if [ $bCmdDeviceVersion == 1 ]; then
 	ver=$(printDeviceVersion)
-	echo $ver
+	if [ $bJsonOutput == 1 ]; then
+		echo $ver
+	fi
 elif [ $bCmdCheck == 1 ]; then
 	_log " - operation: check if upgrade required"
 	ret=$(checkUpgradeRequired $bLatest)
+	if [ $bJsonOutput == 1 ]; then
+		echo $ret
+	fi
 elif [ $bCmdFwUpgrade == 1 ]; then 
 	#firmwareUpgrade
 	firmwareUpgrade $bLatest $bForceUpgrade
