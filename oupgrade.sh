@@ -315,7 +315,6 @@ getMacAddr () {
 # 	firmware build to report
 #		upgrade status (starting, complete)
 HttpUpdateAcknowledge () {
-	local urlBase=$(ReadFirmwareApiUrl)
 	# create the data payload to be sent in the HTTP Post request
 	#		mac_addr
 	#		device (omega2, omega2p)
@@ -329,6 +328,7 @@ HttpUpdateAcknowledge () {
 	local bEnabled=$(ReadUpdateAcknowledgeEnabled)
 	if [ $bEnabled == 1 ]; then
 		_log "attempting upgrade acknowledge: $3 $1 $2"
+		local urlBase=$(ReadFirmwareApiUrl)
 		count=0
 		maxCount=10
 		while [ 1 ]; do
@@ -460,6 +460,7 @@ downloadInstallFirmware () {
 	HttpUpdateAcknowledge $repoVersion $repoBuildNum "starting"
 	sleep 5 	# wait 5 seconds before starting the firmware upgrade
 	
+	_log "Starting upgrade"
 	if [ $bDebug == 0	 ]; then
 		sysupgrade $localBinaryPath
 	fi
@@ -502,13 +503,10 @@ checkUpgradeRequired () {
 	# compare version numbers
 	Print "> Comparing version numbers"
 	local bUpgrade=$(VersionNumberCompare $repoVersion $deviceVersion)
+	## compare the build numbers
 	local bBuildMismatch=0
-	## compare the build numbers (only if versions are the same)
-	if 	[ $bUpgrade == 0 ]
-	then
-		bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
-	fi
-
+	bBuildMismatch=$(BuildNumberCompare $repoBuildNum $deviceBuildNum)
+	
 	## generate script info output (json and stdout)
 	info=$(generateScriptInfoOutput $bUpgrade $bBuildMismatch $binaryName $binaryUrl $localBinaryPath $fileSize $deviceVersion $deviceBuildNum $repoVersion $repoBuildNum)
 
@@ -612,6 +610,7 @@ _rm_cron_script()
 _create_cron_entries() {
 	local updateFrequency
 	updateFrequency=$(_get_uci_value ${PACKAGE}.oupgrade.update_frequency) || _exit 1 "ERROR: UCI config ${PACKAGE}.oupgrade.update_frequency is not set"
+	_log "auto update frequency from config: $updateFrequency"
 	
 	local cronInterval
 	if [ "$updateFrequency" == "daily" ]; then
@@ -628,6 +627,7 @@ _create_cron_entries() {
 	Print "> Enabling automatic updates on ${updateFrequency} interval"
 	
 	_add_cron_script "${cronInterval} ${SCRIPT} -l -f  # ${updateFrequency} automatic firmware upgrade"
+	_log "> auto update configured"
 }
 
 check_cron_status()
@@ -635,8 +635,10 @@ check_cron_status()
 	_log " - operation: configure automatic update"
 	local autoUpdateEnabled
 	autoUpdateEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.auto_update) || _exit 1 "ERROR: UCI config ${PACKAGE}.oupgrade.auto_update is not set"
+	_log "removing previous auto update jobs"
 	_rm_cron_script "${SCRIPT}"
 	if [ ${autoUpdateEnabled} -eq 1 ]; then
+		_log "adding new auto update jobs"
 		_create_cron_entries 
 	fi
 }
