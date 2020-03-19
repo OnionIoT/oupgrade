@@ -41,13 +41,18 @@ Usage () {
 		echo ""
 		echo "Usage: $0"
 		echo ""
-		echo "Arguments:"
-		echo " -h, --help        Print this usage prompt"
+		echo "Modes of Operation:"
+		echo " [no arguments]    Perform update if required"
 		echo " -v, --version     Just print the current firmware version"
+		echo " -c, --check       Only compare against online versions, do not actually update"
+		echo " autoupdate        Enable automatic updates on an interval, as determined by UCI ${PACKAGE}.oupgrade"
+		echo ""
+		echo "Options:"
+		echo " -h, --help        Print this usage prompt"
 		echo " -l, --latest      Use latest repo version (instead of stable version)"
 		echo " -f, --force       Force the upgrade, regardless of versions"
-		echo " -c, --check       Only compare versions, do not actually update"
 		echo " -u, --ubus        Script outputs only json"
+		
 
 		echo ""
 }
@@ -63,6 +68,9 @@ _log()
 _exit()
 {
     local rc=$1
+		if [ "$2" != "" ]; then
+			echo $2 > /dev/console
+		fi
     exit ${rc}
 }
 
@@ -594,7 +602,7 @@ _rm_cron_script()
 
 _create_cron_entries() {
 	local updateFrequency
-	updateFrequency=$(_get_uci_value ${PACKAGE}.oupgrade.update_frequency) || _exit 1
+	updateFrequency=$(_get_uci_value ${PACKAGE}.oupgrade.update_frequency) || _exit 1 "ERROR: UCI config ${PACKAGE}.oupgrade.update_frequency is not set"
 	
 	local cronInterval
 	if [ "$updateFrequency" == "daily" ]; then
@@ -605,16 +613,19 @@ _create_cron_entries() {
 		cronInterval="0 0 1 * *"
 	else
 	  _log "Invalid automatic update frequency"
-		_exit 1
+		_exit 1 "Invalid automatic update frequency"
 	fi
+	
+	Print "> Enabling automatic updates on ${updateFrequency} interval"
 	
 	_add_cron_script "${cronInterval} ${SCRIPT} -l -f  # ${updateFrequency} automatic firmware upgrade"
 }
 
 check_cron_status()
 {
+	_log " - operation: configure automatic update"
 	local autoUpdateEnabled
-	autoUpdateEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.auto_update) || _exit 1
+	autoUpdateEnabled=$(_get_uci_value ${PACKAGE}.oupgrade.auto_update) || _exit 1 "ERROR: UCI config ${PACKAGE}.oupgrade.auto_update is not set"
 	_rm_cron_script "${SCRIPT}"
 	if [ ${autoUpdateEnabled} -eq 1 ]; then
 		_create_cron_entries 
