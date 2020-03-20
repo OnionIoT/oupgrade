@@ -32,6 +32,8 @@ PACKAGE=onion
 FIRMWARE_CONFIG=${PACKAGE}.@${PACKAGE}[0]
 DEFAULT_URL="https://api.onioniot.com/firmware"
 
+PRINTFILE=$(mktemp)
+
 
 
 # function to print script usage
@@ -57,6 +59,19 @@ Usage () {
 		echo ""
 }
 
+# print to stdout if not doing json output
+#	arg1	- the text to print
+Print () {
+	if [ $bJsonOutput == 0 ]; then
+		echo "$1" >> $PRINTFILE
+	fi
+}
+
+DumpPrints () {
+	cat $PRINTFILE
+	> $PRINTFILE
+}
+
 _log()
 {
 		if [ ${LOGGING} -eq 1 ]; then
@@ -68,8 +83,9 @@ _log()
 _exit()
 {
     local rc=$1
+		DumpPrints
 		if [ "$2" != "" ]; then
-			echo $2 > /dev/console
+			echo $2
 		fi
     exit ${rc}
 }
@@ -93,14 +109,6 @@ _get_uci_value()
 				return 1
 		fi
 		echo ${value}
-}
-
-# print to stdout if not doing json output
-#	arg1	- the text to print
-Print () {
-	if [ $bJsonOutput == 0 ]; then
-		echo "$1" > /dev/console
-	fi
 }
 
 ## functions to parse version data
@@ -422,6 +430,7 @@ downloadInstallFirmware () {
 	local repoBuildNum="$4"
 	
 	Print "> Downloading new firmware ..."
+	DumpPrints
 	_log "downloading installing new firmware: v${repoVersion} b${repoBuildNum} from ${binaryUrl} to ${localBinaryPath}"
 
 	# delete any local firmware with the same name
@@ -457,6 +466,7 @@ downloadInstallFirmware () {
 	
 	# start firmware upgrade
 	Print "> Starting firmware upgrade...."
+	DumpPrints
 	HttpUpdateAcknowledge $repoVersion $repoBuildNum "starting"
 	sleep 5 	# wait 5 seconds before starting the firmware upgrade
 	
@@ -526,6 +536,7 @@ firmwareUpgrade () {
 	fwInfo=$(checkUpgradeRequired $1)
 	bUpgrade=$?
 	
+	DumpPrints
 	_log "upgrade required = $bUpgrade"
 	_log "force upgrade    = $bForceUpgrade"
 	
@@ -705,12 +716,14 @@ fi
 ## perform commands
 if [ $bCmdDeviceVersion == 1 ]; then
 	ver=$(printDeviceVersion)
+	DumpPrints
 	if [ $bJsonOutput == 1 ]; then
 		echo $ver
 	fi
 elif [ $bCmdCheck == 1 ]; then
 	_log " - operation: check if upgrade required"
 	ret=$(checkUpgradeRequired $bLatest)
+	DumpPrints
 	if [ $bJsonOutput == 1 ]; then
 		echo $ret
 	fi
