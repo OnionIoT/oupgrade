@@ -637,7 +637,7 @@ _create_cron_entries() {
 	
 	Print "> Enabling automatic updates on ${updateFrequency} interval"
 	
-	_add_cron_script "${cronInterval} ${SCRIPT} -l -f  # ${updateFrequency} automatic firmware upgrade"
+	_add_cron_script "${cronInterval} ${SCRIPT} -l  # ${updateFrequency} automatic firmware upgrade"
 	_log "> auto update configured"
 }
 
